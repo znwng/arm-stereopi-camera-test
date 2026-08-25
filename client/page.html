@@ -1,0 +1,292 @@
+<!doctype html>
+
+<html>
+  <head>
+    <title>StereoPi Camera</title>
+
+    <style>
+      body {
+        margin: 0;
+        padding: 20px;
+        background: #111111;
+        color: #00ff00;
+        font-family: monospace;
+      }
+
+      .container {
+        display: flex;
+        gap: 20px;
+      }
+
+      .camera {
+        flex: 1;
+      }
+
+      .title {
+        text-align: center;
+        font-size: 24px;
+        font-weight: bold;
+        margin-bottom: 8px;
+      }
+
+      .camera img {
+        width: 100%;
+        display: block;
+        background: #111111;
+        border: 2px solid #00ff00;
+        border-radius: 8px;
+        box-sizing: border-box;
+      }
+
+      .stats {
+        margin-top: 10px;
+        line-height: 1.6;
+        font-size: 15px;
+      }
+
+      .common {
+        margin-top: 20px;
+        padding: 15px;
+        border: 2px solid #00ff00;
+        border-radius: 8px;
+        line-height: 1.6;
+        font-size: 15px;
+      }
+
+      .sync {
+        font-weight: bold;
+      }
+
+      .sync.in-sync {
+        color: #00ff00;
+      }
+
+      .sync.not-in-sync {
+        color: #ff0000;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <div class="camera">
+        <div class="title">L</div>
+
+        <img id="left" />
+
+        <div class="stats">
+          <div id="left_stats">Waiting...</div>
+          <div id="left_timestamp">Timestamp: --</div>
+        </div>
+      </div>
+
+      <div class="camera">
+        <div class="title">R</div>
+
+        <img id="right" />
+
+        <div class="stats">
+          <div id="right_stats">Waiting...</div>
+          <div id="right_timestamp">Timestamp: --</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="common">
+      <div id="sync_status" class="sync">
+        Stereo Sync: Waiting...
+      </div>
+
+      <div id="sync_difference">
+        Timestamp Difference: --
+      </div>
+    </div>
+
+    <script>
+      const leftImage = document.getElementById("left");
+      const rightImage = document.getElementById("right");
+
+      const leftStats = document.getElementById("left_stats");
+      const rightStats = document.getElementById("right_stats");
+
+      const leftTimestamp =
+        document.getElementById("left_timestamp");
+
+      const rightTimestamp =
+        document.getElementById("right_timestamp");
+
+      const syncStatus =
+        document.getElementById("sync_status");
+
+      const syncDifference =
+        document.getElementById("sync_difference");
+
+      const SYNC_THRESHOLD_NS = 10_000_000n;
+
+      let leftTimestampValue = null;
+      let rightTimestampValue = null;
+
+      const socket = new WebSocket(
+        "ws://" + location.host + "/stream"
+      );
+
+      socket.binaryType = "arraybuffer";
+
+      function updateSyncStatus() {
+        if (
+          leftTimestampValue === null ||
+          rightTimestampValue === null
+        ) {
+          syncStatus.textContent =
+            "Stereo Sync: Waiting...";
+
+          syncStatus.className = "sync";
+
+          syncDifference.textContent =
+            "Timestamp Difference: --";
+
+          return;
+        }
+
+        const difference =
+          leftTimestampValue > rightTimestampValue
+            ? leftTimestampValue - rightTimestampValue
+            : rightTimestampValue - leftTimestampValue;
+
+        const differenceMs =
+          Number(difference) / 1_000_000;
+
+        const inSync =
+          difference <= SYNC_THRESHOLD_NS;
+
+        if (inSync) {
+          syncStatus.textContent =
+            "Stereo Sync: IN SYNC";
+
+          syncStatus.className =
+            "sync in-sync";
+        } else {
+          syncStatus.textContent =
+            "Stereo Sync: NOT IN SYNC";
+
+          syncStatus.className =
+            "sync not-in-sync";
+        }
+
+        syncDifference.textContent =
+          "Timestamp Difference: " +
+          differenceMs.toFixed(2) +
+          " ms";
+      }
+
+      socket.onmessage = (event) => {
+        if (typeof event.data === "string") {
+          const data = JSON.parse(event.data);
+
+          const leftMbps = data.left.transfer;
+          const rightMbps = data.right.transfer;
+
+          const leftMBps = leftMbps / 8;
+          const rightMBps = rightMbps / 8;
+
+          leftStats.innerHTML =
+            "FPS: " +
+            data.left.fps.toFixed(1) +
+            "<br>" +
+            "Transfer: " +
+            leftMbps.toFixed(2) +
+            " Mbps (" +
+            leftMBps.toFixed(2) +
+            " MBps)";
+
+          rightStats.innerHTML =
+            "FPS: " +
+            data.right.fps.toFixed(1) +
+            "<br>" +
+            "Transfer: " +
+            rightMbps.toFixed(2) +
+            " Mbps (" +
+            rightMBps.toFixed(2) +
+            " MBps)";
+
+          return;
+        }
+
+        const bytes = new Uint8Array(event.data);
+
+        const camera = bytes[0];
+
+        const timestamp = new DataView(
+          event.data,
+          1,
+          8
+        ).getBigUint64(0);
+
+        const jpeg = bytes.slice(9);
+
+        const blob = new Blob([jpeg], {
+          type: "image/jpeg",
+        });
+
+        const url = URL.createObjectURL(blob);
+
+        if (camera === 0) {
+          const old = leftImage.src;
+
+          leftImage.src = url;
+
+          if (old.startsWith("blob:")) {
+            URL.revokeObjectURL(old);
+          }
+
+          leftTimestamp.textContent =
+            "Timestamp: " +
+            timestamp.toString();
+
+          leftTimestampValue = timestamp;
+        } else {
+          const old = rightImage.src;
+
+          rightImage.src = url;
+
+          if (old.startsWith("blob:")) {
+            URL.revokeObjectURL(old);
+          }
+
+          rightTimestamp.textContent =
+            "Timestamp: " +
+            timestamp.toString();
+
+          rightTimestampValue = timestamp;
+        }
+
+        updateSyncStatus();
+      };
+
+      socket.onclose = () => {
+        leftStats.textContent =
+          "WebSocket disconnected";
+
+        rightStats.textContent =
+          "WebSocket disconnected";
+
+        leftTimestamp.textContent =
+          "Timestamp: --";
+
+        rightTimestamp.textContent =
+          "Timestamp: --";
+
+        syncStatus.textContent =
+          "Stereo Sync: Disconnected";
+
+        syncStatus.className = "sync";
+
+        syncDifference.textContent =
+          "Timestamp Difference: --";
+
+        leftTimestampValue = null;
+        rightTimestampValue = null;
+      };
+    </script>
+  </body>
+</html>
