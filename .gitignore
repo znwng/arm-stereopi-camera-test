@@ -1,0 +1,79 @@
+# Python
+
+**pycache**/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+ENV/
+
+# Environment / secrets
+
+.env
+.env.*
+!.env.example
+
+# IDEs
+
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+
+build/
+dist/
+*.egg-info/
+
+# Logs
+
+*.log
+
+# Test / coverage
+
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+
+.ipynb_checkpoints/
+
+# Model files
+
+*.pt
+*.pth
+*.onnx
+*.engine
+*.weights
+
+# Data
+
+data/
+datasets/
+outputs/
+runs/
+
+# Generated media
+
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.jpg
+*.jpeg
+*.png
+
+# Temporary files
+
+*.tmp
+*.temp
+.cache/
