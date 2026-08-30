@@ -1,0 +1,36 @@
+# Local configuration
+config.toml
+
+# Build artifacts
+*.exe
+*.out
+*.bin
+*.app
+*.test
+
+# Go build output
+/bin/
+/build/
+
+# Go workspace
+go.work
+go.work.sum
+
+# Environment files
+.env
+.env.*
+
+# IDE / editor files
+.vscode/
+.idea/
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
