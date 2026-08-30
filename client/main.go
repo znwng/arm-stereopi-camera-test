@@ -4,17 +4,24 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/BurntSushi/toml"
 	"github.com/gin-gonic/gin"
 )
 
-const (
-	stereoPiIP = "172.16.48.240"
+type Config struct {
+	StereoPi StereoPiConfig `toml:"stereo_pi"`
+	Server   ServerConfig   `toml:"server"`
+}
 
-	stereoPort = 5000
+type StereoPiConfig struct {
+	IP   string `toml:"ip"`
+	Port int    `toml:"port"`
+}
 
-	httpHost = "0.0.0.0"
-	httpPort = 8000
-)
+type ServerConfig struct {
+	Host string `toml:"host"`
+	Port int    `toml:"port"`
+}
 
 var (
 	leftCamera  Camera
@@ -22,8 +29,18 @@ var (
 )
 
 func main() {
+	var config Config
+
+	if _, err := toml.DecodeFile("config.toml", &config); err != nil {
+		log.Fatalf(
+			"Failed to load configuration: %v",
+			err,
+		)
+	}
+
 	go connectStereoCamera(
-		stereoPort,
+		config.StereoPi.IP,
+		config.StereoPi.Port,
 		&leftCamera,
 		&rightCamera,
 	)
@@ -35,13 +52,13 @@ func main() {
 
 	address := fmt.Sprintf(
 		"%s:%d",
-		httpHost,
-		httpPort,
+		config.Server.Host,
+		config.Server.Port,
 	)
 
 	log.Printf(
 		"Web interface available at http://localhost:%d",
-		httpPort,
+		config.Server.Port,
 	)
 
 	if err := router.Run(address); err != nil {

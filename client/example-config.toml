@@ -1,0 +1,7 @@
+[stereo_pi]
+ip = "ip address"
+port = 6969
+
+[server]
+host = "0.0.0.0" # remains the same
+port = 6767

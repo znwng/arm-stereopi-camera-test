@@ -53,9 +53,7 @@ func receiveFrame(
 		return nil, 0, err
 	}
 
-	frameSize := binary.BigEndian.Uint32(
-		header,
-	)
+	frameSize := binary.BigEndian.Uint32(header)
 
 	timestampData, err := recvExact(
 		conn,
@@ -66,9 +64,7 @@ func receiveFrame(
 		return nil, 0, err
 	}
 
-	timestamp := binary.BigEndian.Uint64(
-		timestampData,
-	)
+	timestamp := binary.BigEndian.Uint64(timestampData)
 
 	frame, err := recvExact(
 		conn,
@@ -119,9 +115,7 @@ func stereoReceiver(
 	rightCamera.LastStats = now
 
 	for {
-		leftFrame, leftTimestamp, err := receiveFrame(
-			conn,
-		)
+		leftFrame, leftTimestamp, err := receiveFrame(conn)
 
 		if err != nil {
 			log.Printf(
@@ -132,9 +126,7 @@ func stereoReceiver(
 			return
 		}
 
-		rightFrame, rightTimestamp, err := receiveFrame(
-			conn,
-		)
+		rightFrame, rightTimestamp, err := receiveFrame(conn)
 
 		if err != nil {
 			log.Printf(
@@ -165,9 +157,7 @@ func stereoReceiver(
 
 		mutex.Unlock()
 
-		_, err = conn.Write(
-			[]byte(ackMessage),
-		)
+		_, err = conn.Write([]byte(ackMessage))
 
 		if err != nil {
 			log.Printf(
@@ -181,12 +171,13 @@ func stereoReceiver(
 }
 
 func connectStereoCamera(
+	ip string,
 	port int,
 	leftCamera *Camera,
 	rightCamera *Camera,
 ) {
 	address := net.JoinHostPort(
-		stereoPiIP,
+		ip,
 		fmt.Sprintf("%d", port),
 	)
 
@@ -212,9 +203,7 @@ func connectStereoCamera(
 			continue
 		}
 
-		log.Printf(
-			"Connected to StereoPi!",
-		)
+		log.Printf("Connected to StereoPi!")
 
 		stereoReceiver(
 			conn,
