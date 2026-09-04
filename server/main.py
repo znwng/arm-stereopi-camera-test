@@ -240,9 +240,12 @@ def stream_stereo(
                 timestamp_difference_us = abs(left_timestamp - right_timestamp) / 1000
 
                 print(
-                    f"Pair {pair_id}: "
+                    f"\r\033[K"
+                    f"\rPair {pair_id}: "
                     f"L/R difference = "
-                    f"{timestamp_difference_us:.1f} us"
+                    f"{timestamp_difference_us:.1f} us",
+                    end="",
+                    flush=True,
                 )
 
                 # ---------------------------------------------------------

@@ -199,8 +199,8 @@ func stereoReceiver(
 		timestampDifferenceUS :=
 			float64(timestampDifference) / 1000.0
 
-		log.Printf(
-			"Received stereo pair %d: L/R difference = %.1f us",
+		fmt.Printf(
+			"\r\033[KReceived stereo pair %d: L/R difference = %.1f us",
 			pairID,
 			timestampDifferenceUS,
 		)
