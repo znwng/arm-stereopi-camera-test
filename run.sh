@@ -20,16 +20,11 @@ server)
 
 	cd "$ROOT_DIR/server"
 
-	if [ ! -d ".venv" ]; then
-		echo "Creating virtual environment..."
-		python3 -m venv .venv
-	fi
-
 	echo "Installing server dependencies..."
-	.venv/bin/pip install -r requirements.txt
+	pip3 install -r requirements.txt
 
 	echo "Starting camera server..."
-	exec .venv/bin/python main.py
+	exec python3 main.py
 	;;
 
 client)
