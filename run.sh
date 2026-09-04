@@ -20,11 +20,8 @@ server)
 
 	cd "$ROOT_DIR/server"
 
-	echo "Installing server dependencies..."
-	pip3 install -r requirements.txt
-
 	echo "Starting camera server..."
-	exec python3 main.py
+	exec python main.py
 	;;
 
 client)
