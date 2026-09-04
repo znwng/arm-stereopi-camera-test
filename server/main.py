@@ -151,6 +151,9 @@ def stream_stereo(
 ):
     frame_time = 1.0 / FPS
 
+    # Unique ID for each left/right stereo pair.
+    pair_id = 0
+
     while True:
 
         print("stereo_camera: waiting for laptop...")
@@ -172,7 +175,9 @@ def stream_stereo(
                 if wait_time > 0:
                     time.sleep(wait_time)
 
+                # ---------------------------------------------------------
                 # Capture both cameras concurrently
+                # ---------------------------------------------------------
 
                 results = {}
 
@@ -204,19 +209,59 @@ def stream_stereo(
                 left_capture_thread.join()
                 right_capture_thread.join()
 
+                # ---------------------------------------------------------
                 # Get captured frames
+                # ---------------------------------------------------------
 
                 left_frame, left_timestamp = results["left"]
 
                 right_frame, right_timestamp = results["right"]
 
+                # ---------------------------------------------------------
+                # Increment pair ID
+                #
+                # One pair ID corresponds to exactly one left/right pair.
+                # ---------------------------------------------------------
+
+                pair_id += 1
+
+                # ---------------------------------------------------------
                 # JPEG compression
+                # ---------------------------------------------------------
 
                 left_data = encode_frame(left_frame)
 
                 right_data = encode_frame(right_frame)
 
+                # ---------------------------------------------------------
+                # Calculate capture time difference
+                # ---------------------------------------------------------
+
+                timestamp_difference_us = abs(left_timestamp - right_timestamp) / 1000
+
+                print(
+                    f"Pair {pair_id}: "
+                    f"L/R difference = "
+                    f"{timestamp_difference_us:.1f} us"
+                )
+
+                # ---------------------------------------------------------
+                # Send pair ID
+                #
+                # uint64:
+                #   !Q = unsigned 64-bit integer, network byte order
+                # ---------------------------------------------------------
+
+                conn.sendall(
+                    struct.pack(
+                        "!Q",
+                        pair_id,
+                    )
+                )
+
+                # ---------------------------------------------------------
                 # Send left frame
+                # ---------------------------------------------------------
 
                 conn.sendall(
                     struct.pack(
@@ -234,7 +279,9 @@ def stream_stereo(
 
                 conn.sendall(left_data)
 
+                # ---------------------------------------------------------
                 # Send right frame
+                # ---------------------------------------------------------
 
                 conn.sendall(
                     struct.pack(
@@ -252,7 +299,9 @@ def stream_stereo(
 
                 conn.sendall(right_data)
 
+                # ---------------------------------------------------------
                 # Wait for client confirmation
+                # ---------------------------------------------------------
 
                 response = recv_exact(
                     conn,
@@ -262,7 +311,9 @@ def stream_stereo(
                 if response != ACK:
                     raise ConnectionError(f"Unexpected client response: {response!r}")
 
+                # ---------------------------------------------------------
                 # Schedule the next pair
+                # ---------------------------------------------------------
 
                 next_frame_time += frame_time
 

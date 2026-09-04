@@ -45,6 +45,13 @@ func streamHandler(c *gin.Context) {
 	var lastRightBytes uint64
 
 	for {
+		// -------------------------------------------------------------
+		// Copy the current stereo state while holding the mutex.
+		//
+		// Since the receiver updates both cameras under the same
+		// mutex, these values represent one complete stereo pair.
+		// -------------------------------------------------------------
+
 		mutex.RLock()
 
 		var currentLeftFrame []byte
@@ -65,6 +72,9 @@ func streamHandler(c *gin.Context) {
 			)
 		}
 
+		currentLeftPairID := leftCamera.PairID
+		currentRightPairID := rightCamera.PairID
+
 		currentLeftTimestamp := leftCamera.Timestamp
 		currentRightTimestamp := rightCamera.Timestamp
 
@@ -76,21 +86,37 @@ func streamHandler(c *gin.Context) {
 
 		mutex.RUnlock()
 
+		// -------------------------------------------------------------
+		// Send left frame
+		//
+		// Format:
+		//
+		// byte  0      = camera ID (0 = left)
+		// bytes 1-8    = pair ID
+		// bytes 9-16   = timestamp
+		// bytes 17-N   = JPEG
+		// -------------------------------------------------------------
+
 		if currentLeftFrame != nil {
 			data := make(
 				[]byte,
-				len(currentLeftFrame)+9,
+				len(currentLeftFrame)+17,
 			)
 
 			data[0] = 0
 
 			binary.BigEndian.PutUint64(
 				data[1:9],
+				currentLeftPairID,
+			)
+
+			binary.BigEndian.PutUint64(
+				data[9:17],
 				currentLeftTimestamp,
 			)
 
 			copy(
-				data[9:],
+				data[17:],
 				currentLeftFrame,
 			)
 
@@ -102,21 +128,37 @@ func streamHandler(c *gin.Context) {
 			}
 		}
 
+		// -------------------------------------------------------------
+		// Send right frame
+		//
+		// Format:
+		//
+		// byte  0      = camera ID (1 = right)
+		// bytes 1-8    = pair ID
+		// bytes 9-16   = timestamp
+		// bytes 17-N   = JPEG
+		// -------------------------------------------------------------
+
 		if currentRightFrame != nil {
 			data := make(
 				[]byte,
-				len(currentRightFrame)+9,
+				len(currentRightFrame)+17,
 			)
 
 			data[0] = 1
 
 			binary.BigEndian.PutUint64(
 				data[1:9],
+				currentRightPairID,
+			)
+
+			binary.BigEndian.PutUint64(
+				data[9:17],
 				currentRightTimestamp,
 			)
 
 			copy(
-				data[9:],
+				data[17:],
 				currentRightFrame,
 			)
 
@@ -127,6 +169,10 @@ func streamHandler(c *gin.Context) {
 				return
 			}
 		}
+
+		// -------------------------------------------------------------
+		// Send statistics once per second
+		// -------------------------------------------------------------
 
 		now := time.Now()
 

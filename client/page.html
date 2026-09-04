@@ -64,6 +64,10 @@
       .sync.not-in-sync {
         color: #ff0000;
       }
+
+      .pair {
+        margin-top: 5px;
+      }
     </style>
   </head>
 
@@ -76,6 +80,7 @@
 
         <div class="stats">
           <div id="left_stats">Waiting...</div>
+          <div id="left_pair">Pair: --</div>
           <div id="left_timestamp">Timestamp: --</div>
         </div>
       </div>
@@ -87,6 +92,7 @@
 
         <div class="stats">
           <div id="right_stats">Waiting...</div>
+          <div id="right_pair">Pair: --</div>
           <div id="right_timestamp">Timestamp: --</div>
         </div>
       </div>
@@ -100,14 +106,30 @@
       <div id="sync_difference">
         Timestamp Difference: --
       </div>
+
+      <div id="pair_status" class="pair">
+        Pair: --
+      </div>
     </div>
 
     <script>
-      const leftImage = document.getElementById("left");
-      const rightImage = document.getElementById("right");
+      const leftImage =
+        document.getElementById("left");
 
-      const leftStats = document.getElementById("left_stats");
-      const rightStats = document.getElementById("right_stats");
+      const rightImage =
+        document.getElementById("right");
+
+      const leftStats =
+        document.getElementById("left_stats");
+
+      const rightStats =
+        document.getElementById("right_stats");
+
+      const leftPair =
+        document.getElementById("left_pair");
+
+      const rightPair =
+        document.getElementById("right_pair");
 
       const leftTimestamp =
         document.getElementById("left_timestamp");
@@ -121,19 +143,34 @@
       const syncDifference =
         document.getElementById("sync_difference");
 
-      const SYNC_THRESHOLD_NS = 10_000_000n;
+      const pairStatus =
+        document.getElementById("pair_status");
+
+
+      /*
+       * Maximum acceptable difference between
+       * left and right capture timestamps.
+       *
+       * 1 ms = 1,000,000 ns
+       */
+      const SYNC_THRESHOLD_NS = 1_000_000n;
+
+
+      let leftPairID = null;
+      let rightPairID = null;
 
       let leftTimestampValue = null;
       let rightTimestampValue = null;
 
-      const socket = new WebSocket(
-        "ws://" + location.host + "/stream"
-      );
-
-      socket.binaryType = "arraybuffer";
 
       function updateSyncStatus() {
+        /*
+         * We need both frames before checking
+         * stereo synchronization.
+         */
         if (
+          leftPairID === null ||
+          rightPairID === null ||
           leftTimestampValue === null ||
           rightTimestampValue === null
         ) {
@@ -145,19 +182,53 @@
           syncDifference.textContent =
             "Timestamp Difference: --";
 
+          pairStatus.textContent =
+            "Pair: --";
+
           return;
         }
 
+
+        /*
+         * First verify that the two images
+         * belong to the same stereo pair.
+         */
+        if (leftPairID !== rightPairID) {
+          syncStatus.textContent =
+            "Stereo Sync: PAIR MISMATCH";
+
+          syncStatus.className =
+            "sync not-in-sync";
+
+          syncDifference.textContent =
+            "Timestamp Difference: --";
+
+          pairStatus.textContent =
+            "Pair Mismatch: L=" +
+            leftPairID.toString() +
+            " R=" +
+            rightPairID.toString();
+
+          return;
+        }
+
+
+        /*
+         * Calculate absolute timestamp difference.
+         */
         const difference =
           leftTimestampValue > rightTimestampValue
             ? leftTimestampValue - rightTimestampValue
             : rightTimestampValue - leftTimestampValue;
 
+
         const differenceMs =
           Number(difference) / 1_000_000;
 
+
         const inSync =
           difference <= SYNC_THRESHOLD_NS;
+
 
         if (inSync) {
           syncStatus.textContent =
@@ -173,21 +244,50 @@
             "sync not-in-sync";
         }
 
+
         syncDifference.textContent =
           "Timestamp Difference: " +
-          differenceMs.toFixed(2) +
+          differenceMs.toFixed(3) +
           " ms";
+
+
+        pairStatus.textContent =
+          "Pair: " +
+          leftPairID.toString();
       }
 
+
+      const socket = new WebSocket(
+        "ws://" + location.host + "/stream"
+      );
+
+
+      socket.binaryType = "arraybuffer";
+
+
       socket.onmessage = (event) => {
+
+        /*
+         * Text messages contain statistics.
+         */
         if (typeof event.data === "string") {
+
           const data = JSON.parse(event.data);
 
-          const leftMbps = data.left.transfer;
-          const rightMbps = data.right.transfer;
 
-          const leftMBps = leftMbps / 8;
-          const rightMBps = rightMbps / 8;
+          const leftMbps =
+            data.left.transfer;
+
+          const rightMbps =
+            data.right.transfer;
+
+
+          const leftMBps =
+            leftMbps / 8;
+
+          const rightMBps =
+            rightMbps / 8;
+
 
           leftStats.innerHTML =
             "FPS: " +
@@ -199,6 +299,7 @@
             leftMBps.toFixed(2) +
             " MBps)";
 
+
           rightStats.innerHTML =
             "FPS: " +
             data.right.fps.toFixed(1) +
@@ -209,66 +310,173 @@
             rightMBps.toFixed(2) +
             " MBps)";
 
+
           return;
         }
 
-        const bytes = new Uint8Array(event.data);
 
-        const camera = bytes[0];
+        /*
+         * Binary frame format from Go:
+         *
+         * byte  0      = camera ID
+         * bytes 1-8    = pair ID
+         * bytes 9-16   = timestamp
+         * bytes 17-N   = JPEG
+         */
 
-        const timestamp = new DataView(
-          event.data,
-          1,
-          8
-        ).getBigUint64(0);
 
-        const jpeg = bytes.slice(9);
+        const bytes =
+          new Uint8Array(event.data);
 
-        const blob = new Blob([jpeg], {
-          type: "image/jpeg",
-        });
 
-        const url = URL.createObjectURL(blob);
+        /*
+         * Camera ID:
+         *
+         * 0 = left
+         * 1 = right
+         */
+        const camera =
+          bytes[0];
 
+
+        /*
+         * Pair ID.
+         */
+        const pairID =
+          new DataView(
+            event.data,
+            1,
+            8
+          ).getBigUint64(0);
+
+
+        /*
+         * Capture timestamp.
+         */
+        const timestamp =
+          new DataView(
+            event.data,
+            9,
+            8
+          ).getBigUint64(0);
+
+
+        /*
+         * JPEG begins at byte 17.
+         */
+        const jpeg =
+          bytes.slice(17);
+
+
+        const blob =
+          new Blob(
+            [jpeg],
+            {
+              type: "image/jpeg",
+            }
+          );
+
+
+        const url =
+          URL.createObjectURL(blob);
+
+
+        /*
+         * LEFT CAMERA
+         */
         if (camera === 0) {
-          const old = leftImage.src;
 
-          leftImage.src = url;
+          const old =
+            leftImage.src;
+
+
+          leftImage.src =
+            url;
+
 
           if (old.startsWith("blob:")) {
             URL.revokeObjectURL(old);
           }
+
+
+          leftPairID =
+            pairID;
+
+          leftTimestampValue =
+            timestamp;
+
+
+          leftPair.textContent =
+            "Pair: " +
+            pairID.toString();
+
 
           leftTimestamp.textContent =
             "Timestamp: " +
             timestamp.toString();
 
-          leftTimestampValue = timestamp;
-        } else {
-          const old = rightImage.src;
+        }
 
-          rightImage.src = url;
+
+        /*
+         * RIGHT CAMERA
+         */
+        else if (camera === 1) {
+
+          const old =
+            rightImage.src;
+
+
+          rightImage.src =
+            url;
+
 
           if (old.startsWith("blob:")) {
             URL.revokeObjectURL(old);
           }
 
+
+          rightPairID =
+            pairID;
+
+          rightTimestampValue =
+            timestamp;
+
+
+          rightPair.textContent =
+            "Pair: " +
+            pairID.toString();
+
+
           rightTimestamp.textContent =
             "Timestamp: " +
             timestamp.toString();
-
-          rightTimestampValue = timestamp;
         }
 
+
+        /*
+         * Check synchronization after
+         * receiving either camera frame.
+         */
         updateSyncStatus();
       };
 
+
       socket.onclose = () => {
+
         leftStats.textContent =
           "WebSocket disconnected";
 
         rightStats.textContent =
           "WebSocket disconnected";
+
+
+        leftPair.textContent =
+          "Pair: --";
+
+        rightPair.textContent =
+          "Pair: --";
+
 
         leftTimestamp.textContent =
           "Timestamp: --";
@@ -276,13 +484,24 @@
         rightTimestamp.textContent =
           "Timestamp: --";
 
+
         syncStatus.textContent =
           "Stereo Sync: Disconnected";
 
-        syncStatus.className = "sync";
+        syncStatus.className =
+          "sync";
+
 
         syncDifference.textContent =
           "Timestamp Difference: --";
+
+
+        pairStatus.textContent =
+          "Pair: --";
+
+
+        leftPairID = null;
+        rightPairID = null;
 
         leftTimestampValue = null;
         rightTimestampValue = null;

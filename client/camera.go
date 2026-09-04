@@ -13,6 +13,7 @@ import (
 type Camera struct {
 	Frame      []byte
 	Timestamp  uint64
+	PairID     uint64
 	Bytes      uint64
 	FPS        float64
 	FrameCount uint64
@@ -39,6 +40,21 @@ func recvExact(
 	}
 
 	return data, nil
+}
+
+func receivePairID(
+	conn net.Conn,
+) (uint64, error) {
+	data, err := recvExact(
+		conn,
+		8,
+	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return binary.BigEndian.Uint64(data), nil
 }
 
 func receiveFrame(
@@ -82,10 +98,12 @@ func updateCamera(
 	camera *Camera,
 	frame []byte,
 	timestamp uint64,
+	pairID uint64,
 	now time.Time,
 ) {
 	camera.Frame = frame
 	camera.Timestamp = timestamp
+	camera.PairID = pairID
 	camera.Bytes += uint64(len(frame))
 	camera.FrameCount++
 
@@ -115,27 +133,84 @@ func stereoReceiver(
 	rightCamera.LastStats = now
 
 	for {
-		leftFrame, leftTimestamp, err := receiveFrame(conn)
+		// -------------------------------------------------------------
+		// Receive pair ID
+		//
+		// One pair ID corresponds to exactly one left/right pair.
+		// -------------------------------------------------------------
+
+		pairID, err := receivePairID(conn)
 
 		if err != nil {
 			log.Printf(
-				"StereoPi disconnected while receiving left frame: %v",
+				"StereoPi disconnected while receiving pair ID: %v",
 				err,
 			)
 
 			return
 		}
+
+		// -------------------------------------------------------------
+		// Receive left frame
+		// -------------------------------------------------------------
+
+		leftFrame, leftTimestamp, err := receiveFrame(conn)
+
+		if err != nil {
+			log.Printf(
+				"StereoPi disconnected while receiving left frame for pair %d: %v",
+				pairID,
+				err,
+			)
+
+			return
+		}
+
+		// -------------------------------------------------------------
+		// Receive right frame
+		// -------------------------------------------------------------
 
 		rightFrame, rightTimestamp, err := receiveFrame(conn)
 
 		if err != nil {
 			log.Printf(
-				"StereoPi disconnected while receiving right frame: %v",
+				"StereoPi disconnected while receiving right frame for pair %d: %v",
+				pairID,
 				err,
 			)
 
 			return
 		}
+
+		// -------------------------------------------------------------
+		// Calculate left/right timestamp difference
+		// -------------------------------------------------------------
+
+		var timestampDifference uint64
+
+		if leftTimestamp > rightTimestamp {
+			timestampDifference =
+				leftTimestamp - rightTimestamp
+		} else {
+			timestampDifference =
+				rightTimestamp - leftTimestamp
+		}
+
+		timestampDifferenceUS :=
+			float64(timestampDifference) / 1000.0
+
+		log.Printf(
+			"Received stereo pair %d: L/R difference = %.1f us",
+			pairID,
+			timestampDifferenceUS,
+		)
+
+		// -------------------------------------------------------------
+		// Update both cameras atomically
+		//
+		// The mutex ensures that the HTTP/WebSocket side never sees
+		// a partially updated stereo pair.
+		// -------------------------------------------------------------
 
 		now = time.Now()
 
@@ -145,6 +220,7 @@ func stereoReceiver(
 			leftCamera,
 			leftFrame,
 			leftTimestamp,
+			pairID,
 			now,
 		)
 
@@ -152,10 +228,15 @@ func stereoReceiver(
 			rightCamera,
 			rightFrame,
 			rightTimestamp,
+			pairID,
 			now,
 		)
 
 		mutex.Unlock()
+
+		// -------------------------------------------------------------
+		// Tell StereoPi that the complete pair was received.
+		// -------------------------------------------------------------
 
 		_, err = conn.Write([]byte(ackMessage))
 
